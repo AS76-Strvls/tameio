@@ -175,7 +175,7 @@
     </div>
 
     <div class="card">
-      <h2>Εγγραφές εσόδων <span class="muted small">(επεξεργασία με κωδικό)</span></h2>
+      <h2>Εγγραφές <span class="muted small">(έσοδα: ✎ με κωδικό · έξοδα: read-only)</span></h2>
       <div id="editList"></div>
     </div>
   </section>
@@ -360,15 +360,29 @@ function renderGrid(){
   renderEditList();
 }
 function renderEditList(){
-  const rows=(GRID.items||[]).filter(it=>it.src==='in'&&it.row).sort((a,b)=>d10(b.date).localeCompare(d10(a.date)));
-  if(!rows.length){$('#editList').innerHTML='<div class="empty">Καμία εγγραφή εσόδου. (Επεξεργάζονται μόνο τα έσοδα του app· τα έξοδα διαχειρίζονται στο Αίτημα Επιστροφής Εξόδων.)</div>';return;}
-  $('#editList').innerHTML=rows.map(it=>`<div class="item">
-    <span class="d">${esc(fmtDate(it.date))}</span>
-    <span class="l">${esc(it.fund)}${(it.label&&it.label!=='Έσοδο'&&it.label!=='Έσοδο (ειδικό)')?' · '+esc(it.label):''}</span>
-    <span class="a ${it.amount<0?'out':'in'}">${it.amount<0?'':'＋'}${eur(it.amount)}</span>
-    <span class="x" title="Επεξεργασία" onclick="editRow(${it.row})">✎</span>
-    <span class="x" title="Διαγραφή" onclick="delRow(${it.row})">✕</span>
-  </div>`).join('');
+  const items=(GRID.items||[]).slice().sort((a,b)=>d10(b.date).localeCompare(d10(a.date)));
+  if(!items.length){$('#editList').innerHTML='<div class="empty">Καμία εγγραφή.</div>';return;}
+  $('#editList').innerHTML=items.map(it=>{
+    if(it.src==='in'&&it.row){   // έσοδο του app → editable
+      return `<div class="item">
+        <span class="d">${esc(fmtDate(it.date))}</span>
+        <span class="l">${esc(it.fund)}${(it.label&&it.label!=='Έσοδο'&&it.label!=='Έσοδο (ειδικό)')?' · '+esc(it.label):''}</span>
+        <span class="a ${it.amount<0?'out':'in'}">${it.amount<0?'':'＋'}${eur(it.amount)}</span>
+        <span class="x" title="Επεξεργασία" onclick="editRow(${it.row})">✎</span>
+        <span class="x" title="Διαγραφή" onclick="delRow(${it.row})">✕</span>
+      </div>`;
+    }
+    // έξοδο από το Επιστροφή Εξόδων → read-only + info
+    return `<div class="item">
+      <span class="d">${esc(fmtDate(it.date))}</span>
+      <span class="l">${esc(it.fund)} · ${esc(it.label||'Έξοδο')}</span>
+      <span class="a out">−${eur(it.amount)}</span>
+      <span class="x" title="Πώς διορθώνεται το έξοδο" onclick="expenseInfo()">ℹ︎</span>
+    </div>`;
+  }).join('');
+}
+function expenseInfo(){
+  alert('Τα έξοδα καταγράφονται και διορθώνονται από το εργαλείο «Αίτημα Επιστροφής Εξόδων» (μαζί με αποδείξεις, τραπεζικά, κατάσταση). Για διόρθωση ή διαγραφή εξόδου, επικοινώνησε με την ταμία ή τον Αρχηγό Συστήματος — δεν αλλάζει από εδώ, ώστε να μένουν συμφωνημένα email/απόδειξη/ιστορικό.');
 }
 async function editRow(row){
   const it=(GRID.items||[]).find(x=>x.row===row&&x.src==='in');if(!it)return;
