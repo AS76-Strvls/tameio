@@ -43,6 +43,12 @@
   .quick{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
   .qbtn{font-size:13px;padding:7px 12px;border:1px dashed var(--blue);color:var(--blue);background:#eef4fc;border-radius:8px;cursor:pointer}
 
+  .kindtog{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;max-width:320px;margin-top:4px}
+  .kindtog button{flex:1;padding:11px 8px;border:none;background:#fff;font-size:15px;font-weight:800;cursor:pointer;color:var(--muted)}
+  .kindtog button.on[data-k="Έσοδο"]{background:var(--in);color:#fff}
+  .kindtog button.on[data-k="Έξοδο"]{background:var(--out);color:#fff}
+  .note{font-size:12.5px;color:var(--muted);background:#f8fafc;border:1px dashed var(--line);border-radius:9px;padding:9px 11px;margin-top:10px}
+
   .secgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:4px}
   @media(min-width:680px){ .secgrid{grid-template-columns:repeat(4,1fr)} }
   .secbtn{padding:16px 8px;border:2px solid var(--line);background:#fff;border-radius:12px;font-size:16px;font-weight:800;cursor:pointer;color:var(--ink)}
@@ -123,7 +129,14 @@
   <!-- ── ΚΑΤΑΧΩΡΗΣΗ (πάντα ΕΣΟΔΟ) ───────────────────────────── -->
   <section id="pane-add">
     <div class="card form">
-      <h2>Νέο έσοδο</h2>
+      <h2>Νέα κίνηση</h2>
+
+      <label>Τύπος</label>
+      <div class="kindtog" id="kindTog">
+        <button type="button" data-k="Έσοδο" class="on">＋ Έσοδο</button>
+        <button type="button" data-k="Έξοδο">− Έξοδο</button>
+      </div>
+      <div class="note" id="outNote" style="display:none">Χρησιμοποίησε το «Έξοδο» ΜΟΝΟ για έξοδα που δεν περνούν από το «Αίτημα Επιστροφής Εξόδων» (π.χ. μετρητά χωρίς αίτημα). Τα υπόλοιπα έξοδα μπαίνουν αυτόματα.</div>
 
       <label>Ταμείο</label>
       <div class="secgrid" id="secGrid">
@@ -192,7 +205,7 @@ const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
 const GR_DAYS=['Κυρ','Δευ','Τρι','Τετ','Πεμ','Παρ','Σαβ'];
 const GR_MONTHS=['Ιαν','Φεβ','Μαρ','Απρ','Μαϊ','Ιουν','Ιουλ','Αυγ','Σεπ','Οκτ','Νοε','Δεκ'];
 const SECTIONS=['Αγέλη','Ομάδα','Κοινότητα'];
-const state={funds:[],others:[],addFund:'',movesFund:'',rows:[]};
+const state={funds:[],others:[],addFund:'',movesFund:'',rows:[],kind:'Έσοδο'};
 
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function toast(m,e){const t=$('#toast');t.textContent=m;t.className='toast show'+(e?' err':'');setTimeout(()=>t.className='toast',2600);}
@@ -230,6 +243,18 @@ $$('.tab').forEach(t=>t.onclick=()=>{
   $('#pane-add').style.display=k==='add'?'':'none';
   $('#pane-moves').style.display=k==='moves'?'':'none';
   if(k==='moves')loadGrid();
+});
+
+/* ── Έσοδο / Έξοδο toggle (το Έξοδο θέλει κωδικό admin) ── */
+$('#kindTog').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+  const k=b.dataset.k;
+  if(k==='Έξοδο'){
+    const code=ensureCode(); if(!code){toast('Το έξοδο θέλει κωδικό admin',true);return;}
+  }
+  state.kind=k;
+  $('#kindTog').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.k===k));
+  $('#outNote').style.display = k==='Έξοδο'?'':'none';
+  $('#btnSave').textContent = k==='Έξοδο'?'Καταχώρηση εξόδου':'Καταχώρηση εσόδου';
 });
 
 /* ── Ταμεία (κουμπιά) — Καταχώρηση ── */
@@ -289,12 +314,14 @@ function setFunds(funds){
   onOtherChange();
 }
 
-/* ── Save έσοδο ── */
+/* ── Save κίνηση (έσοδο ή, με κωδικό admin, έξοδο) ── */
 $('#btnSave').onclick=async()=>{
-  const amount=parseFloat($('#fAmount').value);
-  if(!(amount>0)){toast('Βάλε ποσό μεγαλύτερο από 0',true);return;}
+  const base=parseFloat($('#fAmount').value);
+  if(!(base>0)){toast('Βάλε ποσό μεγαλύτερο από 0',true);return;}
   if(!state.addFund){toast('Διάλεξε ταμείο',true);return;}
   if(!$('#fDate').value){toast('Βάλε ημερομηνία',true);return;}
+  const isOut = state.kind==='Έξοδο';
+  if(isOut && !AUTH){toast('Το έξοδο θέλει κωδικό admin',true);return;}
 
   let fund, type='Κανονικό';
   const note = $('#fNote').value.trim();          // προαιρετική περιγραφή, πάντα
@@ -306,17 +333,20 @@ $('#btnSave').onclick=async()=>{
     fund = state.addFund;
   }
 
+  const amount = isOut ? -base : base;            // έξοδο = αρνητικό
   const body={action:'add',date:$('#fDate').value,fund,type,amount,note,by:$('#fBy').value.trim()};
+  if(isOut) body.key=AUTH;
   const btn=$('#btnSave');btn.disabled=true;btn.textContent='Αποθήκευση…';
   try{
     const r=await apiPost(body);
     if(r&&r.ok){done(fund,amount);}
+    else if(r&&r.error==='auth'){AUTH='';toast('Λάθος κωδικός admin',true);}
     else toast('Σφάλμα: '+((r&&r.error)||'?'),true);
   }catch(err){
     if(err.message==='no-url')toast('Λείπει το WEB_APP_URL',true);
     else done(fund,amount);   // Apps Script συχνά ολοκληρώνει το write παρά το CORS
   }
-  btn.disabled=false;btn.textContent='Καταχώρηση εσόδου';
+  btn.disabled=false;btn.textContent=isOut?'Καταχώρηση εξόδου':'Καταχώρηση εσόδου';
 };
 function done(fund,amount){
   toast('Καταχωρήθηκε ✓  '+eur(amount)+' → '+fund);
