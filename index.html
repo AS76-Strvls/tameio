@@ -90,10 +90,25 @@
   .muted{color:var(--muted)} .small{font-size:12.5px}
 
   .tblwrap{overflow-x:auto}
-  table{width:100%;border-collapse:collapse;font-size:14px}
+  table{width:100%;border-collapse:separate;border-spacing:0;font-size:14px}
   th,td{padding:8px 9px;border-bottom:1px solid var(--line);white-space:nowrap}
   th{font-size:12px;color:var(--muted);background:#f8fafc;text-align:right;font-weight:700}
   th:first-child,td:first-child{text-align:left}
+  /* ── Παγωμένη 1η στήλη (ημερομηνίες) όταν κυλάς οριζόντια ── */
+  th:first-child,td:first-child{position:sticky;left:0;z-index:2;background:#fff;
+    box-shadow:1px 0 0 var(--line)}
+  th:first-child{background:#f8fafc;z-index:3}
+  .gtot td:first-child{background:#f8fafc}
+  /* ── Κλικ σε ταμείο = απομόνωση ── */
+  th.fcol{cursor:pointer;user-select:none}
+  th.fcol:hover{color:var(--ink);text-decoration:underline}
+  th.fcol.iso{color:#fff;background:var(--ink)}
+  .isobar{display:none;align-items:center;gap:10px;margin:0 0 10px;padding:8px 12px;
+    border:1px solid var(--line);border-radius:10px;background:#f8fafc;font-size:13.5px}
+  .isobar.on{display:flex}
+  .isobar b{font-weight:800}
+  .isobar button{border:1px solid var(--line);background:#fff;border-radius:8px;
+    padding:4px 10px;cursor:pointer;font:inherit}
   td.num{text-align:right;font-variant-numeric:tabular-nums}
   .gtot td{font-weight:800;border-top:2px solid var(--ink);background:#f8fafc}
   .cin{color:var(--in)} .cout{color:var(--out)}
@@ -212,6 +227,10 @@
 
     <div class="card">
       <h2>Πίνακας ταμείων <span class="muted small">(＋ έσοδα · − έξοδα)</span></h2>
+      <div class="isobar" id="isoBar">
+        <span>Απομονωμένο ταμείο: <b id="isoName"></b></span>
+        <button type="button" id="isoClear">Δείξε όλα</button>
+      </div>
       <div class="tblwrap"><table id="grid"></table></div>
     </div>
 
@@ -318,6 +337,7 @@ $$('#pane-add .qbtn').forEach(b=>b.onclick=()=>{
 
 /* ── Κινήσεις (πίνακας) ── */
 $('#mReload').onclick=loadGrid; $('#mYear').onchange=loadGrid;
+const ic=$('#isoClear'); if(ic)ic.onclick=()=>{ISO='';renderGrid();};
 let AUTH='';   // κωδικός ΑΣ — ΜΟΝΟ στη μνήμη της συνεδρίας, ποτέ σε localStorage
 function ensureCode(){ if(AUTH) return AUTH; const c=prompt('Κωδικός Αρχηγού Συστήματος:'); if(c) AUTH=c.trim(); return AUTH; }
 /* Επαλήθευση στον server πριν επιτραπεί η προβολή «Όλα». */
@@ -412,19 +432,26 @@ async function loadGrid(){
     else $('#grid').innerHTML='<tr><td class="empty">Σφάλμα.</td></tr>';
   }catch(err){$('#grid').innerHTML='<tr><td class="empty">Εκτός σύνδεσης.</td></tr>';}
 }
+let ISO='';   /* ταμείο σε απομόνωση ('' = όλα) */
 function renderGrid(){
-  const funds=GRID.funds||[], items=GRID.items||[], totals=GRID.totals||{};
-  /* κάρτες συνόλων (διαθέσιμο ανά ταμείο) ξεχωριστά πάνω */
-  $('#totCards').innerHTML = funds.length
-    ? funds.map(f=>{const t=totals[f]||{total:0};const neg=t.total<0;
+  const all=GRID.funds||[], items0=GRID.items||[], totals=GRID.totals||{};
+  if(ISO && all.indexOf(ISO)<0) ISO='';
+  const funds = ISO ? [ISO] : all;
+  const items = ISO ? items0.filter(it=>it.fund===ISO) : items0;
+
+  const ib=$('#isoBar'); if(ib){ ib.classList.toggle('on',!!ISO); if(ISO)$('#isoName').textContent=ISO; }
+
+  /* κάρτες συνόλων: πάντα ΟΛΑ τα ταμεία, για να μη χάνεις την εικόνα */
+  $('#totCards').innerHTML = all.length
+    ? all.map(f=>{const t=totals[f]||{total:0};const neg=t.total<0;
         return `<div class="tcard${neg?' neg':''}"><div class="n">${esc(f)}</div><div class="v">${eur(t.total)}</div></div>`;}).join('')
     : '';
   if(!items.length){$('#grid').innerHTML='<tr><td class="empty">Καμία κίνηση για αυτή τη χρονιά.</td></tr>';renderEditList();return;}
-  /* κελιά: date|fund → άθροισμα (+/−) */
   const cell={};
   items.forEach(it=>{const k=d10(it.date)+'|'+it.fund;cell[k]=(cell[k]||0)+it.sign*it.amount;});
   const dates=Array.from(new Set(items.map(it=>d10(it.date)))).sort();
-  let h='<tr><th>Ημ/νία</th>'+funds.map(f=>`<th>${esc(f)}</th>`).join('')+'</tr>';
+  let h='<tr><th>Ημ/νία</th>'+funds.map(f=>
+    `<th class="fcol${f===ISO?' iso':''}" data-f="${esc(f)}" title="Κλικ για απομόνωση">${esc(f)}</th>`).join('')+'</tr>';
   dates.forEach(d=>{
     h+='<tr><td>'+esc(fmtDate(d))+'</td>'+funds.map(f=>{
       const k=d+'|'+f; if(!(k in cell))return '<td class="num"></td>';
@@ -434,6 +461,10 @@ function renderGrid(){
   h+='<tr class="gtot"><td>Σύνολα</td>'+funds.map(f=>{const t=totals[f]||{total:0};const cls=t.total<0?'cout':'cin';
     return `<td class="num ${cls}">${eur(t.total)}</td>`;}).join('')+'</tr>';
   $('#grid').innerHTML=h;
+  $('#grid').querySelectorAll('th.fcol').forEach(th=>th.onclick=()=>{
+    ISO = (ISO===th.dataset.f) ? '' : th.dataset.f;   /* ξανακλίκ = επαναφορά */
+    renderGrid();
+  });
   renderEditList();
 }
 function renderEditList(){
