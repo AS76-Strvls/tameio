@@ -226,7 +226,7 @@
 
 <script>
 /* ═══ ΡΥΘΜΙΣΗ: βάλε το /exec URL μετά το deploy ═══ */
-const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbztConLfQ0-6RZHCpKcBYygIfz7Dg8PzG0_FadfiZ3m3CIug1ijI3BYVjcODV9OUAwa/exec';
+const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxPJZ86NWX5oo6GMq3dq7u_FvhFfM8hrgcDVoDm9L4QBf2hlcEikOSq5ck-fhH5MmQD/exec';
 /* ════════════════════════════════════════════════ */
 
 const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
@@ -262,6 +262,7 @@ function apiGet(params){
     function cleanup(){clearTimeout(to);delete window[cb];if(s.parentNode)s.remove();}
     window[cb]=d=>{cleanup();resolve(d);};
     if(VIEW&&params.view==null)params.view=VIEW;
+    if(AUTH&&params.key==null)params.key=AUTH;   /* ο server ελέγχει· το HTML δεν κρύβει τίποτα μόνο του */
     const q=Object.keys(params).map(k=>encodeURIComponent(k)+'='+encodeURIComponent(params[k]==null?'':params[k])).join('&');
     s.src=WEB_APP_URL+'?callback='+cb+'&'+q; s.onerror=()=>{cleanup();reject(new Error('network'));};
     document.body.appendChild(s);
@@ -317,8 +318,14 @@ $$('#pane-add .qbtn').forEach(b=>b.onclick=()=>{
 
 /* ── Κινήσεις (πίνακας) ── */
 $('#mReload').onclick=loadGrid; $('#mYear').onchange=loadGrid;
-let AUTH='';   // κωδικός επεξεργασίας (μνήμη μέσα στη συνεδρία)
-function ensureCode(){ if(AUTH) return AUTH; const c=prompt('Κωδικός επεξεργασίας:'); if(c) AUTH=c.trim(); return AUTH; }
+let AUTH='';   // κωδικός ΑΣ — ΜΟΝΟ στη μνήμη της συνεδρίας, ποτέ σε localStorage
+function ensureCode(){ if(AUTH) return AUTH; const c=prompt('Κωδικός Αρχηγού Συστήματος:'); if(c) AUTH=c.trim(); return AUTH; }
+/* Επαλήθευση στον server πριν επιτραπεί η προβολή «Όλα». */
+async function checkCode(){
+  const c=ensureCode(); if(!c) return false;
+  try{ const r=await apiGet({action:'auth',key:c,view:''}); if(r&&r.ok) return true; }catch(e){ toast('Εκτός σύνδεσης',true); return false; }
+  AUTH=''; toast('Λάθος κωδικός',true); return false;
+}
 
 /* ── init ── */
 function fillYearSelect(sel,years){
@@ -370,13 +377,15 @@ $('#btnSave').onclick=async()=>{
   }
 
   const amount = isOut ? -base : base;            // έξοδο = αρνητικό
-  const body={action:'add',date:$('#fDate').value,fund,type,amount,note,by:$('#fBy').value.trim()};
-  if(isOut) body.key=AUTH;
+  const body={action:'add',view:VIEW,date:$('#fDate').value,fund,type,amount,note,by:$('#fBy').value.trim()};
+  if(AUTH) body.key=AUTH;
   const btn=$('#btnSave');btn.disabled=true;btn.textContent='Αποθήκευση…';
   try{
     const r=await apiPost(body);
     if(r&&r.ok){done(fund,amount);}
     else if(r&&r.error==='auth'){AUTH='';toast('Λάθος κωδικός admin',true);}
+    else if(r&&r.error==='fund'){toast('Το τμήμα σου καταχωρεί μόνο στο δικό του ταμείο',true);}
+    else if(r&&r.error==='view'){toast('Μη έγκυρη προβολή — ξαναδιάλεξε τμήμα',true);}
     else toast('Σφάλμα: '+((r&&r.error)||'?'),true);
   }catch(err){
     if(err.message==='no-url')toast('Λείπει το WEB_APP_URL',true);
@@ -391,12 +400,14 @@ function done(fund,amount){
 
 /* ── Κινήσεις (πίνακας: γραμμές=ημ/νίες, στήλες=ταμεία) ── */
 let GRID={funds:[],items:[],totals:{}};
+function showWarn(r){ if(r&&r.warn){ toast('⚠ '+r.warn, true); console.warn(r.warn); } }
 async function loadGrid(){
   const year=$('#mYear').value||curScoutYear();
   $('#totCards').innerHTML='';$('#editList').innerHTML='';
   $('#grid').innerHTML='<tr><td class="empty">Φόρτωση…</td></tr>';
   try{
     const r=await apiGet({action:'grid',year});
+  showWarn(r);
     if(r&&r.ok){GRID=r.grid||{funds:[],items:[],totals:{}};renderGrid();}
     else $('#grid').innerHTML='<tr><td class="empty">Σφάλμα.</td></tr>';
   }catch(err){$('#grid').innerHTML='<tr><td class="empty">Εκτός σύνδεσης.</td></tr>';}
@@ -492,15 +503,18 @@ function paintView(){
 }
 function showLanding(){ $('#landing').classList.remove('hide'); }
 function hideLanding(){ $('#landing').classList.add('hide'); }
-$$('.lbtn').forEach(b=>b.onclick=()=>{
+$$('.lbtn').forEach(b=>b.onclick=async()=>{
   const v=b.dataset.v;
-  if(v==='all'){ const c=ensureCode(); if(!c){toast('Χρειάζεται κωδικός',true);return;} }
+  if(v==='all'&&!(await checkCode())) return;
   VIEW=v; localStorage.setItem('tameioView',v);
   hideLanding(); paintView(); init();
 });
 const vc=$('#vChg'); if(vc)vc.onclick=()=>{ showLanding(); };
 
-if(VIEW){ hideLanding(); paintView(); init(); } else { showLanding(); }
+(async()=>{
+  if(VIEW==='all'&&!AUTH){ if(!(await checkCode())){ VIEW=''; localStorage.removeItem('tameioView'); showLanding(); return; } }
+  if(VIEW){ hideLanding(); paintView(); init(); } else { showLanding(); }
+})();
 </script>
 </body>
 </html>
