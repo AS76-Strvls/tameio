@@ -269,7 +269,9 @@ function d10(s){return String(s||'').slice(0,10);}
 function eur(n){const v=Math.round(n*100)/100;return (v<0?'−€':'€')+Math.abs(v).toLocaleString('el-GR',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function fmtDate(s){const m=d10(s).match(/^(\d{4})-(\d{2})-(\d{2})/);if(!m)return s||'';const d=new Date(+m[1],+m[2]-1,+m[3]);return GR_DAYS[d.getDay()]+' '+(+m[3])+' '+GR_MONTHS[d.getMonth()];}
 function lastSaturday(){const d=new Date();const diff=(d.getDay()+1)%7;d.setDate(d.getDate()-(diff||7));return d;} /* το πιο πρόσφατο περασμένο Σάββατο */
-function scoutYear(s){const m=d10(s).match(/^(\d{4})-(\d{2})/);if(!m)return '';const y=+m[1],mo=+m[2];const start=mo>=8?y:y-1;return start+'-'+String((start+1)%100).padStart(2,'0');}
+/* Η σκαυτική χρονιά αλλάζει 1 ΣΕΠΤΕΜΒΡΙΟΥ. Εδώ ο μήνας είναι 1-based
+   (από το string «2026-09»), άρα το όριο είναι mo>=9 — ΟΧΙ 8. */
+function scoutYear(s){const m=d10(s).match(/^(\d{4})-(\d{2})/);if(!m)return '';const y=+m[1],mo=+m[2];const start=mo>=9?y:y-1;return start+'-'+String((start+1)%100).padStart(2,'0');}
 function curScoutYear(){return scoutYear(iso(new Date()));}
 
 function apiGet(params){
